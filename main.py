@@ -4,9 +4,14 @@ from routers import movies, genres,recommendation
 
 app= FastAPI()
 
+origins = [
+    "http://localhost:5173",  # React frontend local dev
+    "https://movie-finder-n.vercel.app/"  # Production frontend
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
