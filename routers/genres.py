@@ -3,13 +3,12 @@ from fastapi import APIRouter, Query, HTTPException
 import os
 from dotenv import load_dotenv
 import asyncio
+from utils import add_poster_url, BASE_URL, get_original_language
 
 load_dotenv()
 router = APIRouter()
 
 TMDB_API_KEY = os.getenv("TMDB_API_KEY")
-BASE_URL = "https://api.themoviedb.org/3"
-IMAGE_BASE_URL = "https://image.tmdb.org/t/p/w500"
 
 
 async def tmdb_get(url, params=None, retries=3, backoff=2):
@@ -23,7 +22,7 @@ async def tmdb_get(url, params=None, retries=3, backoff=2):
                 r = await client.get(url, params=params)
                 r.raise_for_status()
                 return r.json()
-        except httpx.RequestError as e:
+        except httpx.RequestError:
             wait = backoff ** attempt
             await asyncio.sleep(wait)
         except httpx.HTTPStatusError as e:
@@ -33,15 +32,6 @@ async def tmdb_get(url, params=None, retries=3, backoff=2):
             await asyncio.sleep(wait)
 
     raise HTTPException(status_code=500, detail=f"TMDB request failed after {retries} attempts")
-
-
-def add_poster_url(movie):
-    """Attach poster URL if available"""
-    if movie.get("poster_path"):
-        movie["poster_url"] = IMAGE_BASE_URL + movie["poster_path"]
-    else:
-        movie["poster_url"] = None
-    return movie
 
 
 # 🔹 Get all genres
@@ -54,9 +44,15 @@ async def get_genres():
 
 # 🔹 Get movies by genre
 @router.get("/genres/{genre_id}/movies")
-async def get_by_genre(genre_id: int, count: int = 15, page: int = 1):
+async def get_by_genre(genre_id: int, count: int = 15, page: int = 1, lang: str = "en"):
+    original_lang = get_original_language(lang)
+
     url = f"{BASE_URL}/discover/movie"
-    data = await tmdb_get(url, params={"with_genres": genre_id, "page": page})
+    data = await tmdb_get(url, params={
+        "with_genres": genre_id,
+        "page": page,
+        "with_original_language": original_lang
+    })
     movies = data.get("results", [])[:count]
     return {"movies": [add_poster_url(m) for m in movies]}
 
@@ -70,8 +66,11 @@ async def get_by_genre_sorted(
         description="Sort by: popularity.asc, popularity.desc, vote_average.asc, vote_average.desc, release_date.asc, release_date.desc"
     ),
     count: int = Query(15, ge=1, le=50),
-    page: int = Query(1, ge=1)
+    page: int = Query(1, ge=1),
+    lang: str = "en"
 ):
+    original_lang = get_original_language(lang)
+
     valid_sorts = [
         "popularity.asc", "popularity.desc",
         "vote_average.asc", "vote_average.desc",
@@ -81,7 +80,13 @@ async def get_by_genre_sorted(
         raise HTTPException(status_code=400, detail=f"Invalid sort_by value. Must be one of: {valid_sorts}")
 
     url = f"{BASE_URL}/discover/movie"
-    data = await tmdb_get(url, params={"with_genres": genre_id, "sort_by": sort_by, "page": page})
+    data = await tmdb_get(url, params={
+        "with_genres": genre_id,
+        "sort_by": sort_by,
+        "page": page,
+        "with_original_language": original_lang
+    })
+
     movies = data.get("results", [])[:count]
 
     if not movies:
